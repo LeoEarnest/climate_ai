@@ -6,8 +6,8 @@
 
 | API 類型 | 路徑格式                                      | 說明                                   |
 |----------|---------------------------------------------|--------------------------------------|
-| 歷史資料 | `/data/history/<year>/<month>/<column_id>/<row_id>` | 依指定年月與格點 ID 查詢歷史氣候資料       |
-| 預測資料 | `/data/prediction/<year>/<month>/<column_id>/<row_id>` | 依指定年月與格點 ID 查詢預測氣候資料（2025–2035） |
+| 歷史資料 | `/data/history/<year>/<month>/<column_id>+<row_id>` | 依指定年月與格點 ID 查詢歷史氣候資料       |
+| 預測資料 | `/data/prediction/<year>/<month>/<column_id>+<row_id>` | 依指定年月與格點 ID 查詢預測氣候資料（2025–2035） |
 
 `column_id` 與 `row_id` 對應到地理網格，可在 `index_table` 查詢經緯度對應。
 
@@ -18,7 +18,7 @@
 ### 取得歷史資料
 
 ```bash
-GET http://localhost:5000/data/history/2020/7/15/23
+GET http://localhost:5000/data/history/2020/7/15+23
 ```
 
 - 2020 → 年份  
@@ -52,7 +52,7 @@ GET http://localhost:5000/data/history/2020/7/15/23
 ### 取得預測資料
 
 ```bash
-GET http://localhost:5000/data/prediction/2028/1/15/23
+GET http://localhost:5000/data/prediction/2028/1/15+23
 ```
 
 - 2028 → 年份（介於 2025–2035）  
