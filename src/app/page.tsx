@@ -1,41 +1,43 @@
+// app/page.tsx
 'use client';
 
+import ClientLayout from './ClientLayout';
 import dynamic from 'next/dynamic';
 import HeroSection from '@/components/sections/HeroSection';
-import DataSection from '@/components/sections/DataSection';
 import EducationSection from '@/components/sections/EducationSection';
 import Footer from '@/components/layout/Footer';
-import FloatingBackground from '@/components/ui/FloatingBackground';
+import NoSSR from '@/components/NoSSR';
+import BackgroundParticles from '@/components/BackgroundParticles';
 
-// 動態匯入 MapSection，關閉 SSR 避免 Hydration Mismatch
 const MapSection = dynamic(
   () => import('@/components/sections/MapSection'),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <section className="min-h-screen py-12 px-6 bg-gray-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading Map...</div>
+      </section>
+    ),
+  }
 );
 
 export default function Home() {
   return (
-    <>
-      {/* 底層背景 */}
-      <FloatingBackground className="fixed inset-0 z-0 pointer-events-none" />
+    <ClientLayout>
+      <main className="min-h-screen text-white relative">
+        {/* 僅在客戶端渲染的背景粒子 */}
+        <NoSSR>
+          <BackgroundParticles />
+        </NoSSR>
 
-      {/* 主要內容 */}
-      <main className="relative z-20 overflow-visible scroll-smooth">
-        {/* 首頁區塊 */}
-        <HeroSection />
-
-        {/* 地圖區塊 */}
-        <MapSection />
-
-        {/* 資料區塊 */}
-        <DataSection />
-
-        {/* 教育區塊 */}
-        <EducationSection />
-
-        {/* 頁腳 */}
-        <Footer />
+        {/* 主要內容區塊 */}
+        <div className="relative z-10">
+          <HeroSection />
+          <MapSection />
+          <EducationSection />
+          <Footer />
+        </div>
       </main>
-    </>
+    </ClientLayout>
   );
 }

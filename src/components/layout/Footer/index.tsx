@@ -14,8 +14,8 @@ export default function Footer() {
           <h3 className="text-xl font-bold mb-2">VERDISLE</h3>
           <p className="text-gray-400 text-sm">Islands of Heat, Cities of Change</p>
         </div>
-        <div className="border-t border-gray-700 pt-4" >
-          <p className="text-gray-500 text-sm">© 2025 VERDISLE Project </p>
+        <div className="border-t border-gray-700 pt-4">
+          <p className="text-gray-500 text-sm">© 2025 VERDISLE Project - 資料科學與城市永續的結合</p>
         </div>
       </motion.div>
     </footer>
