@@ -1,7 +1,8 @@
 from flask import render_template, jsonify
 from app.main import bp
 from app import db
-from app.models import HistoryData, PredictionDecade, NDVITemp
+from app.models import HistoryData, NDVITemp, IndexTable
+from sqlalchemy import func
 
 @bp.route('/')
 @bp.route('/index')
@@ -9,20 +10,116 @@ def index():
     return render_template('index.html', title='主頁')
 
 
-@bp.route('/data/<string:data_type>/<int:year>/<int:month>/<string:colrow>', methods=['GET'])
-def get_data(data_type, year, month, colrow):
+@bp.route('/NDVI/<int:month>/<path:veg>/<string:colrow>', methods=['GET'])
+def get_ndvi_data(month, veg, colrow):
     try:
-        # 選擇對應模型與欄位
-        if data_type == "history":
-            model = HistoryData
-            year_field = "Year"
-            month_field = "Month"
-        elif data_type == "prediction":
-            model = PredictionDecade
-            year_field = "Year_Target"
-            month_field = "Month_Target"
-        else:
-            return jsonify({"error": "Invalid data_type, use 'history' or 'prediction' 資料型態錯誤，請輸入'history' or 'prediction "}), 400
+        # 檢查 vegetation_coverage 是否為有效的浮點數
+        try:
+            vegetation_coverage = float(veg)
+        except ValueError:
+            return jsonify({"error": "Invalid vegetation coverage value 植被覆蓋率格式無效"}), 400
+
+        # 檢查 column_id+row_id 格式
+        if '+' not in colrow:
+            return jsonify({"error": "Invalid format, expected column_id+row_id 無效格式，請輸入column ID+row ID"}), 400
+
+        column_id_str, row_id_str = colrow.split('+', 1)
+        try:
+            column_id = int(column_id_str)
+            row_id = int(row_id_str)
+        except ValueError:
+            return jsonify({"error": "Invalid column_id or row_id format 無效的行列格式"}), 400
+
+        # 查詢 NDVITemp 資料，按照植被覆蓋率的差異排序
+        # 先找完全匹配的資料
+        record = NDVITemp.query.filter_by(
+            Month=month,
+            column_id=column_id,
+            row_id=row_id,
+            Vegetation_Coverage=vegetation_coverage
+        ).first()
+        
+        if not record:
+            # 如果沒有完全匹配的，找最接近的植被覆蓋率
+            record = NDVITemp.query.filter_by(
+                Month=month,
+                column_id=column_id,
+                row_id=row_id
+            ).order_by(
+                func.abs(NDVITemp.Vegetation_Coverage - vegetation_coverage)
+            ).first()
+        
+        if not record:
+            return jsonify({
+                "error": "Data not found 查無資料"
+            }), 404
+
+        # 建立結構化的 payload
+        # 先獲取 index_ref 的資訊
+        coordinates = {}
+        try:
+            if getattr(record, "index_ref", None):
+                coordinates = {
+                    "latitude": record.index_ref.new_LAT,
+                    "longitude": record.index_ref.new_LON,
+                    "elevation": record.index_ref.Elevation
+                }
+            else:
+                # 後備方案：以 col/row 明確查一次
+                idx = IndexTable.query.filter_by(column_id=record.column_id, row_id=record.row_id).first()
+                if idx:
+                    coordinates = {
+                        "latitude": idx.new_LAT,
+                        "longitude": idx.new_LON,
+                        "elevation": idx.Elevation
+                    }
+        except Exception:
+            pass
+
+        payload = {
+            "apparent_temperatures": {
+                "current": getattr(record, "Apparent_Temperature"),
+                "high": getattr(record, "Apparent_Temperature_High"),
+                "low": getattr(record, "Apparent_Temperature_Low")
+            },
+            "predicted_temperatures": {
+                "current": getattr(record, "Temperature_Predicted"),
+                "high": getattr(record, "High_Temp_Predicted"),
+                "low": getattr(record, "Low_Temp_Predicted")
+            },
+            "weather_conditions": {
+                "humidity": getattr(record, "Humidity"),
+                "pressure": getattr(record, "Pressure"),
+                "rain": getattr(record, "Rain"),
+                "solar": getattr(record, "Solar"),
+                "wind": getattr(record, "Wind")
+            },
+            "location": {
+                "column_id": getattr(record, "column_id"),
+                "row_id": getattr(record, "row_id"),
+                **coordinates
+            },
+            "metadata": {
+                "id": getattr(record, "id"),
+                "month": getattr(record, "Month"),
+                "vegetation": round(float(getattr(record, "Vegetation_Coverage")), 1) if getattr(record, "Vegetation_Coverage") is not None else None,
+                "water_body": getattr(record, "Water_Body_Coverage")
+            }
+        }
+
+        return jsonify(payload)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/data/<int:year>/<int:month>/<string:colrow>', methods=['GET'])
+def get_data(year, month, colrow):
+    try:
+        # 固定使用 HistoryData
+        model = HistoryData
+        year_field = "Year"
+        month_field = "Month"
 
         # 檢查 column_id+row_id 格式
         if '+' not in colrow:
@@ -44,120 +141,63 @@ def get_data(data_type, year, month, colrow):
         if not record:
             return jsonify({"error": "Data not found 查無資料"}), 404
 
-        # 回傳所有欄位
-        return jsonify({col.name: getattr(record, col.name) for col in record.__table__.columns})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@bp.route('/NDVI/<int:month>/<path:veg>/<string:colrow>', methods=['GET'])
-def get_ndvi_by_month_veg(month, veg, colrow):
-    """
-    Example:
-      /NDVI/7/0.3/10+0           -> 精確比對 Vegetation_Coverage == 0.3
-      /NDVI/7/min0.3/10+0        -> Vegetation_Coverage >= 0.3
-      /NDVI/7/max0.3/10+0        -> Vegetation_Coverage <= 0.3
-
-    備註：沒有指定年份，會回傳所有年份的符合資料（依 Year 升冪）。
-    """
-    try:
-        # 解析 col+row
-        if '+' not in colrow:
-            return jsonify({"error": "Invalid format, expected <col>+<row> 無效格式"}), 400
-        col_str, row_str = colrow.split('+', 1)
-        column_id = int(col_str)
-        row_id = int(row_str)
-
-        # 解析 veg 參數：支援 minX / maxX / 精確值
-        mode = 'eq'
-        val_str = str(veg)
-        if isinstance(veg, str):
-            if val_str.startswith('min'):
-                mode = 'min'
-                val_str = val_str[3:]
-            elif val_str.startswith('max'):
-                mode = 'max'
-                val_str = val_str[3:]
+        # 先獲取 index_ref 的資訊
+        coordinates = {}
         try:
-            veg_val = float(val_str)
-        except ValueError:
-            return jsonify({"error": "Invalid Vegetation_Coverage; use number, or minX/maxX"}), 400
+            if getattr(record, "index_ref", None):
+                coordinates = {
+                    "latitude": record.index_ref.new_LAT,
+                    "longitude": record.index_ref.new_LON,
+                    "elevation": record.index_ref.Elevation
+                }
+            else:
+                # 後備方案：以 col/row 明確查一次
+                idx = IndexTable.query.filter_by(column_id=record.column_id, row_id=record.row_id).first()
+                if idx:
+                    coordinates = {
+                        "latitude": idx.new_LAT,
+                        "longitude": idx.new_LON,
+                        "elevation": idx.Elevation
+                    }
+        except Exception:
+            pass
 
-        # 組查詢
-        q = NDVITemp.query.filter_by(Month=month, column_id=column_id, row_id=row_id)
-        if mode == 'eq':
-            q = q.filter(NDVITemp.Vegetation_Coverage == veg_val)
-        elif mode == 'min':
-            q = q.filter(NDVITemp.Vegetation_Coverage >= veg_val)
-        elif mode == 'max':
-            q = q.filter(NDVITemp.Vegetation_Coverage <= veg_val)
+        # 建立結構化的 payload
+        payload = {
+            "apparent_temperatures": {
+                "current": getattr(record, "Apparent_Temperature"),
+                "high": getattr(record, "Apparent_Temperature_High"),
+                "low": getattr(record, "Apparent_Temperature_Low")
+            },
+            "temperatures": {
+                "current": getattr(record, "Temperature"),
+                "high": getattr(record, "High_Temp"),
+                "low": getattr(record, "Low_Temp")
+            },
+            "weather_conditions": {
+                "humidity": getattr(record, "Humidity"),
+                "pressure": getattr(record, "Pressure"),
+                "rain": getattr(record, "Rain"),
+                "solar": getattr(record, "Solar"),
+                "wind": getattr(record, "Wind")
+            },
+            "location": {
+                "column_id": getattr(record, "column_id"),
+                "row_id": getattr(record, "row_id"),
+                **coordinates
+            },
+            "metadata": {
+                "id": getattr(record, "id"),
+                "year": getattr(record, "Year"),
+                "month": getattr(record, "Month"),
+                "vegetation": getattr(record, "Vegetation_Coverage"),
+                "water_body": getattr(record, "Water_Body_Coverage")
+            }
+        }
 
-        rows = q.order_by(NDVITemp.Year.asc(), NDVITemp.id.asc()).all()
-        if not rows:
-            return jsonify({"error": "Data not found 查無資料"}), 404
-
-        # 回傳為 list[dict]
-        out = []
-        for r in rows:
-            out.append({c.name: getattr(r, c.name) for c in r.__table__.columns})
-        return jsonify(out), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@bp.route('/NDVI/<string:colrow>', methods=['GET'])
-def get_ndvi_by_cell(colrow):
-    """
-    Return all records for the given grid cell (column_id+row_id), across all months/years.
-    Output ONLY these fields per row:
-      - Month
-      - High_Temp_Predicted
-      - Low_Temp_Predicted
-      - Temperature_Predicted
-      - Apparent_Temperature
-      - Apparent_Temperature_High
-      - Apparent_Temperature_Low
-      - Vegetation_Coverage
-    Example:
-      /NDVI/10+0
-    """
-    try:
-        if '+' not in colrow:
-            return jsonify({"error": "Invalid format, expected <col>+<row> 無效格式"}), 400
-        col_str, row_str = colrow.split('+', 1)
-        column_id = int(col_str)
-        row_id = int(row_str)
-
-        fields = [
-            "Month",
-            "High_Temp_Predicted",
-            "Low_Temp_Predicted",
-            "Temperature_Predicted",
-            "Apparent_Temperature",
-            "Apparent_Temperature_High",
-            "Apparent_Temperature_Low",
-            "Vegetation_Coverage"
-        ]
-
-        rows = (
-            NDVITemp.query
-            .filter_by(column_id=column_id, row_id=row_id)
-            .order_by(NDVITemp.Year.asc(), NDVITemp.Month.asc(), NDVITemp.id.asc())
-            .all()
-        )
-        if not rows:
-            return jsonify({"error": "Data not found 查無資料"}), 404
-
-        out = []
-        for r in rows:
-            item = {}
-            for f in fields:
-                item[f] = getattr(r, f)
-            out.append(item)
-
-        return jsonify(out), 200
+        return jsonify(payload)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+

@@ -32,47 +32,10 @@ class IndexTable(db.Model):
     row_id    = db.Column(db.Integer, primary_key=True)
     new_LON   = db.Column(db.Float)
     new_LAT   = db.Column(db.Float)
+    Elevation = db.Column(db.Float)
 
     def __repr__(self):
         return f"<IndexTable ({self.column_id},{self.row_id})>"
-
-class PredictionDecade(db.Model):
-    __tablename__ = 'prediction_decade'
-    id = db.Column(db.Integer, primary_key=True)
-    column_id = db.Column(db.Integer, nullable=False)
-    row_id    = db.Column(db.Integer, nullable=False)
-
-    # targets
-    Month_Target = db.Column(db.SmallInteger)   # TINYINT UNSIGNED in MySQL
-    Year_Target  = db.Column(db.SmallInteger)
-
-    # predicted metrics
-    High_Temp_Predicted = db.Column(db.Float)
-    Low_Temp_Predicted = db.Column(db.Float)
-    Temperature_Predicted = db.Column(db.Float)
-    Apparent_Temperature_Predicted = db.Column(db.Float)
-    Apparent_Temperature_High_Predicted = db.Column(db.Float)
-    Apparent_Temperature_Low_Predicted = db.Column(db.Float)
-    Humidity = db.Column(db.Float)
-    Solar = db.Column(db.Float)
-    Pressure = db.Column(db.Float)
-    Wind = db.Column(db.Float)
-    Rain = db.Column(db.Float)
-    Vegetation_Coverage = db.Column(db.Float)
-    Water_Body_Coverage = db.Column(db.Float)
-
-    __table_args__ = (
-        ForeignKeyConstraint([
-            'column_id', 'row_id'
-        ], [
-            'index_table.column_id', 'index_table.row_id'
-        ], onupdate='CASCADE', ondelete='RESTRICT'),
-    )
-
-    index_ref = db.relationship('IndexTable', backref=db.backref('prediction_rows', lazy=True))
-
-    def __repr__(self):
-        return f"<PredictionDecade id={self.id} ({self.column_id},{self.row_id})>"
 
 class HistoryData(db.Model):
     __tablename__ = 'history_data'
@@ -118,10 +81,10 @@ class NDVITemp(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     column_id = db.Column(db.Integer, nullable=False)
-    row_id    = db.Column(db.Integer, nullable=False)
+    row_id = db.Column(db.Integer, nullable=False)
+    Vegetation_Coverage = db.Column(db.Float)
 
     Month = db.Column(db.SmallInteger)
-    Year  = db.Column(db.SmallInteger)
 
     High_Temp_Predicted = db.Column(db.Float)
     Low_Temp_Predicted = db.Column(db.Float)
@@ -135,7 +98,7 @@ class NDVITemp(db.Model):
     Wind = db.Column(db.Float)
     Elevation = db.Column(db.Float)
     Rain = db.Column(db.Float)
-    Vegetation_Coverage = db.Column(db.Float)
+    
     Water_Body_Coverage = db.Column(db.Float)
 
     __table_args__ = (
@@ -146,10 +109,10 @@ class NDVITemp(db.Model):
             ondelete='RESTRICT'
         ),
         db.Index('idx_ndvi_col_row', 'column_id', 'row_id'),
-        db.Index('idx_ndvi_month_year', 'Month', 'Year'),
+        db.Index('idx_ndvi_month', 'Month'),
     )
 
     index_ref = db.relationship('IndexTable', backref=db.backref('ndvi_rows', lazy=True))
 
     def __repr__(self):
-        return f"<NDVITemp id={self.id} ({self.column_id},{self.row_id}) Y{self.Year}M{self.Month}>"
+        return f"<NDVITemp id={self.id} ({self.column_id},{self.row_id}) M{self.Month}>"
