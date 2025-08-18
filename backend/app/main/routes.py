@@ -4,6 +4,14 @@ from app import db
 from app.models import HistoryData, NDVITemp, IndexTable
 from sqlalchemy import func
 
+@bp.route('/api/test')
+def api_test():
+    return jsonify({
+        'status': 'success',
+        'message': 'Flask API is working',
+        'timestamp': '2025-08-18'
+    })
+
 @bp.route('/')
 @bp.route('/index')
 def index():

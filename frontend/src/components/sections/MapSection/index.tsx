@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useInView, useScroll, useTransform } from 'framer-motion';
-import { RotateCcw } from 'lucide-react';
 import type { Feature, FeatureCollection, GeoJsonProperties, Polygon, MultiPolygon } from 'geojson';
 import L, { GeoJSON as LGeoJSON, LatLng, LeafletMouseEvent, Layer } from 'leaflet';
+import { weatherAPI } from '@/lib/api';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -80,19 +80,7 @@ export default function MapSection() {
   const titleScale = useTransform(
     scrollYProgress,
     [0.1, 0.3, 0.4, 0.6],
-    [0.8, 1, 0.3, 0.3]
-  );
-
-  const titleX = useTransform(
-    scrollYProgress,
-    [0.1, 0.4, 0.6],
-    [0, 0, 350]
-  );
-
-  const titleY = useTransform(
-    scrollYProgress,
-    [0.1, 0.4, 0.6],
-    [0, 0, -280]
+    [0.8, 1, 0.9, 0.9]
   );
 
   const descriptionOpacity = useTransform(
@@ -105,7 +93,6 @@ export default function MapSection() {
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
 
   // ✅ 新增：用 ref 同步最新的 selectedCellId，避免事件閉包讀到舊值
-
 
 
   const selectedIdRef = useRef<string | null>(null);
@@ -129,6 +116,8 @@ export default function MapSection() {
   const [hintHidden, setHintHidden] = useState<boolean>(false);
   const [centerLL, setCenterLL] = useState<LatLng | null>(null);
   const [geoJsonData, setGeoJsonData] = useState<FeatureCollection | null>(null);
+  const [vegPredicted, setVegPredicted] = useState<number | undefined>(undefined);
+  const [timePredicted, setTimePredicted] = useState<number | undefined>(undefined);
 
   // 讓事件處理器永遠讀到「最新的月份、資料、選取狀態」
   const monthRef = useRef(month);
@@ -149,29 +138,58 @@ export default function MapSection() {
 
   // ===== Derived values =====
   const baseTemp = useMemo(() => getMonthTemp(currentFeature, month), [currentFeature, month]);
-  const vegPredicted = useMemo(() => {
-    if (typeof baseTemp !== 'number') return undefined;
-    // 簡單示意：植被越高 -> 降溫（±2°C 範圍）
-    const predicted = baseTemp + (2 - 4 * (veg / 100));
-    return Number.isFinite(predicted) ? Number(predicted.toFixed(1)) : undefined;
-  }, [baseTemp, veg]);
-  const timePredicted = useMemo(() => {
-    const t = getMonthTemp(currentFeature, month);
-    if (typeof t !== 'number') return undefined;
 
-    // 根據選擇的時間範圍計算預測溫度
-    let yearModifier = 0;
-    if (activeSlider === 'past') {
-      // 過去年份：2013-2023，溫度變化 -1°C 到 +1°C
-      yearModifier = ((pastYear - 2013) / 10) * 2 - 1; // 線性變化 -1°C 到 +1°C
-    } else {
-      // 未來年份：2025-2035，溫度上升 +1°C 到 +3°C
-      yearModifier = 1 + ((futureYear - 2025) / 10) * 2; // 線性變化 +1°C 到 +3°C
-    }
+  // Fetch veg predicted temperature
+  useEffect(() => {
+    const fetchVegPredicted = async () => {
+      if (currentFeature && typeof baseTemp === 'number') {
+        const colId = (currentFeature.properties as any)?.column_id;
+        const rowId = (currentFeature.properties as any)?.row_id;
+        if (typeof colId === 'number' && typeof rowId === 'number') {
+          try {
+            const data = await weatherAPI.getNDVIData(month, veg, colId, rowId);
+            setVegPredicted(data.predicted_temperatures.current); // Correctly access predicted temperature
+          } catch (error) {
+            console.error('Error fetching NDVI data:', error);
+            setVegPredicted(undefined);
+          }
+        } else {
+          setVegPredicted(undefined);
+        }
+      } else {
+        setVegPredicted(undefined);
+      }
+    };
+    fetchVegPredicted();
+  }, [currentFeature, month, veg, baseTemp]);
 
-    const predicted = t + yearModifier;
-    return Number.isFinite(predicted) ? Number(predicted.toFixed(1)) : undefined;
-  }, [currentFeature, month, pastYear, futureYear, activeSlider]);
+  // Fetch time predicted temperature
+  useEffect(() => {
+    const fetchTimePredicted = async () => {
+      if (currentFeature && typeof baseTemp === 'number') {
+        const colId = (currentFeature.properties as any)?.column_id;
+        const rowId = (currentFeature.properties as any)?.row_id;
+        if (typeof colId === 'number' && typeof rowId === 'number') {
+          try {
+            let yearToFetch = activeSlider === 'past' ? pastYear : futureYear;
+            // Assuming getHistoryData can also be used for future predictions if the backend supports it,
+            // or we'll need a separate API for future.
+            // For now, using getHistoryData for both.
+            const data = await weatherAPI.getHistoryData(yearToFetch, month, colId, rowId);
+            setTimePredicted(data.temperatures.current); // Correctly access historical temperature
+          } catch (error) {
+            console.error('Error fetching time data:', error);
+            setTimePredicted(undefined);
+          }
+        } else {
+          setTimePredicted(undefined);
+        }
+      } else {
+        setTimePredicted(undefined);
+      }
+    };
+    fetchTimePredicted();
+  }, [currentFeature, month, pastYear, futureYear, activeSlider, baseTemp]);
 
   // ===== 計算溫度範圍並更新圖層顏色 =====
   const updateLayerColors = useMemo(() => {
@@ -447,44 +465,46 @@ export default function MapSection() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="min-h-screen py-12 px-6 bg-gray-900 relative">
-      <div className="max-w-7xl mx-auto">
-        {/* 標題（保留原有進場特效） */}
-        {/* <div className="sticky top-0 h-screen flex items-center justify-center"> */}
+    <section
+      id="map-section"
+      ref={sectionRef}
+      className="relative overflow-hidden h-[200vh] bg-transparent"
+      style={{ opacity: mounted ? 1 : 0 }} // 用樣式控制顯示
+    >
+      {/* 標題層 */}
+      <div className="sticky top-0 h-screen flex items-center justify-center">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-12"
+          initial={{ opacity: 0, scale: 0.8, x: 0, y: 0 }}
+          style={{ 
+            opacity: mounted ? titleOpacity : 0, 
+            scale: mounted ? titleScale : 0.8
+          }}
+          className="text-center px-4 w-full flex flex-col items-center justify-center"
         >
-          <h2 className="text-4xl md:text-6xl font-black text-white mb-4">Heat Island 熱島效應</h2>
-          <p className="text-xl text-gray-400">Live Monitoring 即時監測</p>
+          <h2
+            className="font-display text-white tracking-wider text-center"
+            style={{ 
+              fontSize: 'clamp(1.2rem, 6vw, 4rem)',
+              lineHeight: '1.2'
+            }}
+          >
+            Heat Island Model
+          </h2>
+          <motion.p
+            className="font-sans text-gray-100 font-regular tracking-wide text-center max-w-2xl mx-auto mt-4"
+            style={{ 
+              opacity: mounted ? descriptionOpacity : 0,
+              fontSize: 'clamp(0.8rem, 2vw, 1.8rem)',
+              lineHeight: '1.4'
+            }}
+          >
+            理解雙北十年的溫度脈動 ↔ 以植物為核心預測未來場景
+          </motion.p>
         </motion.div>
-        {/* </div> */}
-
-        {/* 模式切換（保留樣式，替換為兩種模式） */}
-        <div className="flex justify-center mb-8 gap-4">
-          <button
-            onClick={() => setMode('time')}
-            className={`px-6 py-3 rounded-lg font-semibold transition-all ${mode === 'time'
-              ? 'bg-green-500 text-black'
-              : 'text-gray-400 border border-gray-700 hover:text-white'
-              }`}
-          >
-            理解雙北十年的溫度脈動
-          </button>
-          <button
-            onClick={() => setMode('population')}
-            className={`px-6 py-3 rounded-lg font-semibold transition-all ${mode === 'population'
-              ? 'bg-green-500 text-black'
-              : 'text-gray-400 border border-gray-700 hover:text-white'
-              }`}
-          >
-            以植物為核心預測未來場景
-          </button>
-        </div>
-
-        {/* 地圖容器 */}
+      </div>
+            
+      {/* 模型層 */}    
+      {/* 地圖容器 */}
         <div className="relative bg-black/50 backdrop-blur-sm rounded-3xl border border-gray-800 p-8 overflow-hidden" style={{ marginTop: '2rem' }}>
           {/* 當前年月顯示 */}
           <div className="absolute top-4 left-4 z-20 bg-black/90 rounded-lg p-4 text-white border border-gray-700">
@@ -732,9 +752,8 @@ export default function MapSection() {
             </div>
           </div>
         </div>
-      </div>
 
-      <style jsx>{`
+      <style jsx key="map-section-styles">{`
         .info-sidebar { 
           position: absolute; 
           top: 45px; 

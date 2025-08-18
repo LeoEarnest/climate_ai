@@ -1,13 +1,10 @@
 // components/ui/FloatingBackground.tsx
 'use client';
 
-import { useEffect, useState, HTMLAttributes } from 'react';
+import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 
-interface FloatingBackgroundProps extends HTMLAttributes<HTMLDivElement> {
-  className?: string;
-}
 
 interface BlobConfig {
   id: number;

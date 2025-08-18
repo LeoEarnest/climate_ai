@@ -1,19 +1,28 @@
 'use client';
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/Button'
+import { motion, useScroll, useTransform } from 'framer-motion';
+import { Button } from '@/components/ui/Button';
+import { useRef } from 'react';
 
 export default function HeroSection() {
+  const ref = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start start", "end start"]
+  });
+
+  const opacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+  const scale = useTransform(scrollYProgress, [0, 0.8], [1, 0.2]); // Scale down to 20%
+  const y = useTransform(scrollYProgress, [0, 0.8], ["0%", "-40vh"]); // Move up
+
   const scrollToMap = () =>
     document.getElementById('map-section')?.scrollIntoView({ behavior: 'smooth' });
 
   return (
-    <section className="min-h-screen flex flex-col items-center justify-center px-4 relative">
+    <section ref={ref} className="min-h-screen flex flex-col items-center justify-center px-4 relative">
       {/* 大膽醒目的主標題：使用 Droid Sans Mono */}
       <motion.h1
         className="text-[clamp(3rem,8vw,6rem)] font-display text-black mb-6 drop-shadow-glow"
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 1 }}
+        style={{ opacity, scale, y }}
       >
         VERDISLE
       </motion.h1>

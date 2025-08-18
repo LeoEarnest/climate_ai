@@ -3,16 +3,22 @@ from config import Config
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
+from flask_cors import CORS  # 新增
 
 db = SQLAlchemy()
 migrate = Migrate()
 login = LoginManager()
 login.login_view = 'login.login'
 
-
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # 啟用 CORS
+    # 允許所有來源（開發模式使用）
+    CORS(app)
+    # 若僅允許前端來源，可改為：
+    # CORS(app, origins=['http://localhost:3000'])
 
     db.init_app(app)
     migrate.init_app(app, db)
