@@ -113,6 +113,97 @@ def get_ndvi_data(month, veg, colrow):
         return jsonify({"error": str(e)}), 500
 
 
+@bp.route('/annual/<string:weather_conditions>/<int:year>/<string:colrow>', methods=['GET'])
+def get_yearly_weather_data(weather_conditions, year, colrow):
+    try:
+        # 檢查天氣條件是否有效
+        valid_conditions = ["humidity", "pressure", "rain", "solar", "wind"]
+        if weather_conditions not in valid_conditions:
+            return jsonify({"error": f"Invalid weather condition. Must be one of: {', '.join(valid_conditions)}"}), 400
+
+        # 檢查 column_id+row_id 格式
+        if '+' not in colrow:
+            return jsonify({"error": "Invalid format, expected column_id+row_id 無效格式，請輸入column ID+row ID"}), 400
+
+        column_id_str, row_id_str = colrow.split('+', 1)
+        try:
+            column_id = int(column_id_str)
+            row_id = int(row_id_str)
+        except ValueError:
+            return jsonify({"error": "Invalid column_id or row_id format 無效的行列格式"}), 400
+
+        # 查詢指定年份的所有月份數據
+        records = HistoryData.query.filter_by(
+            Year=year,
+            column_id=column_id,
+            row_id=row_id
+        ).order_by(HistoryData.Month).all()
+
+        if not records:
+            return jsonify({"error": "Data not found 查無資料"}), 404
+
+        # 建立回應數據
+        result = {}
+        for record in records:
+            # 將每個月的指定氣象條件數據加入結果中
+            result[str(record.Month)] = getattr(record, weather_conditions.capitalize())
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/annual/temp/<int:year>/<string:colrow>', methods=['GET'])
+def get_yearly_temperature_data(year, colrow):
+    try:
+        # 檢查 column_id+row_id 格式
+        if '+' not in colrow:
+            return jsonify({"error": "Invalid format, expected column_id+row_id 無效格式，請輸入column ID+row ID"}), 400
+
+        column_id_str, row_id_str = colrow.split('+', 1)
+        try:
+            column_id = int(column_id_str)
+            row_id = int(row_id_str)
+        except ValueError:
+            return jsonify({"error": "Invalid column_id or row_id format 無效的行列格式"}), 400
+
+        # 查詢指定年份的所有月份數據
+        records = HistoryData.query.filter_by(
+            Year=year,
+            column_id=column_id,
+            row_id=row_id
+        ).order_by(HistoryData.Month).all()
+
+        if not records:
+            return jsonify({"error": "Data not found 查無資料"}), 404
+
+        # 建立回應數據
+        result = {
+            "Apparent_Temperature": {},
+            "Apparent_Temperature_High": {},
+            "Apparent_Temperature_Low": {},
+            "Temperature": {},
+            "High_Temp": {},
+            "Low_Temp": {}
+        }
+
+        # 對每個月的數據進行處理
+        for record in records:
+            month_str = str(record.Month)
+            # 體感溫度數據
+            result["Apparent_Temperature"][month_str] = record.Apparent_Temperature
+            result["Apparent_Temperature_High"][month_str] = record.Apparent_Temperature_High
+            result["Apparent_Temperature_Low"][month_str] = record.Apparent_Temperature_Low
+            # 實際溫度數據
+            result["Temperature"][month_str] = record.Temperature
+            result["High_Temp"][month_str] = record.High_Temp
+            result["Low_Temp"][month_str] = record.Low_Temp
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @bp.route('/data/<int:year>/<int:month>/<string:colrow>', methods=['GET'])
 def get_data(year, month, colrow):
     try:
